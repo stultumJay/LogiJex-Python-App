@@ -30,48 +30,50 @@ class ProductCardWidget(QFrame):
         self.current_user = current_user
         self.product_manager = ProductManager()
         self.activity_logger = ActivityLogger()  # Initialize logger
-
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setFrameShadow(QFrame.Shadow.Raised)
-        self.setFixedSize(250, 440)  # Adjust size to be taller and narrower
-        self.setObjectName("productCard")
-        self.setProperty("class", "product-card")  # For styling via stylesheet
         
-        # Apply product card styling from the central styles
-        self.setStyleSheet(get_product_card_style())
+        # Apply card styling
+        self.setObjectName("productCard")
+        self.setProperty("class", "product-card")
+        self.setStyleSheet(get_product_card_style()) # Apply specific product card styling
         
         self.init_ui()
+        
+        # Set better size for cards
+        self.setFixedSize(250, 450)
 
     def init_ui(self):
-        # Vertical layout for the card
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(10)
-
-        # Product image container at the top
+        # Setup layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        
+        # Product image with better container
         image_container = QFrame()
-        image_container.setFixedSize(220, 220)  # Square image container
-        image_container.setStyleSheet("background-color: white; border-radius: 8px;")
+        image_container.setObjectName("image_container")
+        image_container.setFixedSize(200, 200)
         image_layout = QVBoxLayout(image_container)
         image_layout.setContentsMargins(0, 0, 0, 0)
         
         self.image_label = QLabel()
-        self.image_label.setFixedSize(220, 220)  # Match container size
+        self.image_label.setFixedSize(200, 200)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setScaledContents(True)  # Scale the image to fit the label
-        self.image_label.setProperty("class", "product-image")
-        self.update_image()
+        
+        image_path = self.product_data.get('image_path')
+        pixmap = load_product_image(image_path, target_size=(200, 200), keep_aspect_ratio=True)
+        self.image_label.setPixmap(pixmap)
+        
         image_layout.addWidget(self.image_label)
-        main_layout.addWidget(image_container, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        # Product info in a separate container
+        layout.addWidget(image_container, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        # Product info in a separate stylized container
         info_container = QFrame()
         info_container.setObjectName("infoContainer")
         info_layout = QVBoxLayout(info_container)
         info_layout.setContentsMargins(8, 8, 8, 8)
         info_layout.setSpacing(5)
         
-        # Product name
+        # Product name with bold styling
         name_label = QLabel(self.product_data.get("name", "N/A"))
         name_label.setProperty("class", "product-title")
         name_label.setWordWrap(True)
@@ -84,7 +86,7 @@ class ProductCardWidget(QFrame):
         brand_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_layout.addWidget(brand_label)
         
-        # Price
+        # Price with highlight color
         price = self.product_data.get('price', 0.0)
         price_label = QLabel(f"${price:.2f}")
         price_label.setProperty("class", "product-price")
@@ -95,15 +97,15 @@ class ProductCardWidget(QFrame):
         stock = self.product_data.get('stock', 0)
         min_stock = self.product_data.get('min_stock_level', 5)
         
-        status_text = "In Stock"
-        status_class = "status-in-stock"
-        
         if stock <= 0:
-            status_text = "Out of Stock"
+            status_text = "No Stock"
             status_class = "status-no-stock"
         elif stock <= min_stock:
             status_text = "Low Stock"
             status_class = "status-low-stock"
+        else:
+            status_text = "In Stock"
+            status_class = "status-in-stock"
         
         stock_label = QLabel(f"Stock: {stock} ({status_text})")
         stock_label.setProperty("class", status_class)
@@ -117,33 +119,27 @@ class ProductCardWidget(QFrame):
         category_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_layout.addWidget(category_label)
         
-        main_layout.addWidget(info_container)
+        layout.addWidget(info_container)
         
-        # Action buttons in a horizontal layout
+        # Action buttons
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
         
         self.add_stock_btn = QPushButton("Add Stock")
-        self.add_stock_btn.setProperty("class", "card-button")
         self.add_stock_btn.setIcon(get_feather_icon("plus-square", size=14))
         self.add_stock_btn.clicked.connect(self.add_stock)
         button_layout.addWidget(self.add_stock_btn)
 
         self.edit_product_btn = QPushButton("Edit")
-        self.edit_product_btn.setProperty("class", "card-button")
         self.edit_product_btn.setIcon(get_feather_icon("edit", size=14))
         self.edit_product_btn.clicked.connect(self.edit_product)
         button_layout.addWidget(self.edit_product_btn)
         
-        main_layout.addLayout(button_layout)
+        layout.addLayout(button_layout)
         
         self.update_card_visibility_based_on_role()
 
-    def update_image(self):
-        # Load and scale image
-        image_path = self.product_data.get("image_path")
-        pixmap = load_product_image(image_path, target_size=(220, 220), keep_aspect_ratio=True)
-        self.image_label.setPixmap(pixmap)
+    # Image is now handled directly in init_ui and update_card_data methods
 
     def update_card_data(self, new_product_data):
         self.product_data = new_product_data
@@ -161,22 +157,26 @@ class ProductCardWidget(QFrame):
                 stock = new_product_data.get('stock', 0)
                 min_stock = new_product_data.get('min_stock_level', 5)
                 
-                status_text = "In Stock"
-                status_class = "status-in-stock"
-                
                 if stock <= 0:
-                    status_text = "Out of Stock"
+                    status_text = "No Stock"
                     status_class = "status-no-stock"
                 elif stock <= min_stock:
                     status_text = "Low Stock"
                     status_class = "status-low-stock"
+                else:
+                    status_text = "In Stock"
+                    status_class = "status-in-stock"
                 
                 child.setText(f"Stock: {stock} ({status_text})")
                 child.setProperty("class", status_class)
             elif child.text().startswith("Category:"):
                 child.setText(f"Category: {new_product_data.get('category', 'N/A')}")
         
-        self.update_image()
+        # Update image
+        image_path = new_product_data.get('image_path')
+        pixmap = load_product_image(image_path, target_size=(200, 200), keep_aspect_ratio=True)
+        self.image_label.setPixmap(pixmap)
+        
         self.update_card_visibility_based_on_role()  # Re-apply role-based visibility
 
     def update_card_visibility_based_on_role(self):
@@ -293,7 +293,7 @@ class ProductCardDisplay(QWidget):
     This can be used in any dashboard to show products in a consistent card style.
     """
     
-    def __init__(self, current_user, parent=None, cards_per_row=4, card_width=220, card_height=420):
+    def __init__(self, current_user, parent=None, cards_per_row=4, card_width=250, card_height=450):
         super().__init__(parent)
         self.current_user = current_user
         self.product_manager = ProductManager()
@@ -1358,8 +1358,8 @@ class ManagerDashboardWidget(QWidget):
         
         for product in filtered_products:
             card = ProductCardWidget(product, self.current_user, parent=self.products_container)
-            # Make cards slightly smaller to fit 4 in a row
-            card.setFixedSize(220, 420)
+            # Use consistent size for all cards
+            card.setFixedSize(250, 450)
             self.products_grid_layout.addWidget(card, row, col)
             col += 1
             if col >= max_cols:

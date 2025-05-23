@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
                              QMessageBox, QDialog, QFormLayout, QComboBox,
                              QDoubleSpinBox, QSpinBox, QDateEdit, QFileDialog,
-                             QScrollArea, QGridLayout, QFrame, QSizePolicy)
+                             QScrollArea, QGridLayout, QFrame, QSizePolicy, QToolButton)
 from PyQt6.QtCore import Qt, QDate, QSize, QMargins
 from PyQt6.QtGui import QPixmap, QIcon
 import os
@@ -22,10 +22,9 @@ class ProductCard(QFrame):
         self.on_edit_callback = on_edit_callback
         self.on_delete_callback = on_delete_callback
         
+        # Apply card styling
         self.setObjectName("productCard")
         self.setProperty("class", "product-card")
-        self.setFixedSize(220, 300) # Ensure uniform size for all cards
-
         self.setStyleSheet(get_product_card_style()) # Apply specific product card styling
         
         # Setup layout
@@ -35,12 +34,8 @@ class ProductCard(QFrame):
         
         # Product image with better container
         image_container = QFrame()
+        image_container.setObjectName("image_container")
         image_container.setFixedSize(200, 200)
-        image_container.setStyleSheet(f"""
-            background-color: white;
-            border-radius: 5px;
-            border: 1px solid rgba(0,0,0,0.1);
-        """)
         image_layout = QVBoxLayout(image_container)
         image_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -59,13 +54,6 @@ class ProductCard(QFrame):
         # Product info in a separate stylized container
         info_container = QFrame()
         info_container.setObjectName("infoContainer")
-        info_container.setStyleSheet(f"""
-            #infoContainer {{
-                background-color: rgba(255,255,255,0.05);
-                border-radius: 5px;
-                padding: 5px;
-            }}
-        """)
         info_layout = QVBoxLayout(info_container)
         info_layout.setContentsMargins(8, 8, 8, 8)
         info_layout.setSpacing(5)
@@ -79,6 +67,7 @@ class ProductCard(QFrame):
         
         # Brand
         brand_label = QLabel(f"Brand: {product_data.get('brand', 'N/A')}")
+        brand_label.setProperty("class", "product-detail")
         brand_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_layout.addWidget(brand_label)
         
@@ -90,20 +79,24 @@ class ProductCard(QFrame):
         
         # Stock info with status color
         stock_status_class = ""
-        if product_data['status'] == "Low Stock":
-            stock_status_class = "status-low-stock"
-        elif product_data['status'] == "No Stock":
+        if product_data['stock'] <= 0:
+            status_text = "No Stock"
             stock_status_class = "status-no-stock"
+        elif product_data['stock'] <= product_data.get('min_stock_level', 5):
+            status_text = "Low Stock"
+            stock_status_class = "status-low-stock"
         else:
+            status_text = "In Stock"
             stock_status_class = "status-in-stock"
             
-        stock_label = QLabel(f"Stock: {product_data['stock']} ({product_data['status']})")
+        stock_label = QLabel(f"Stock: {product_data['stock']} ({status_text})")
         stock_label.setProperty("class", stock_status_class)
         stock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_layout.addWidget(stock_label)
         
         # Category
         category_label = QLabel(f"Category: {product_data['category']}")
+        category_label.setProperty("class", "product-detail")
         category_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info_layout.addWidget(category_label)
         
@@ -129,6 +122,9 @@ class ProductCard(QFrame):
                 buttons_layout.addWidget(delete_btn)
                 
             layout.addLayout(buttons_layout)
+        
+        # Set better size for cards
+        self.setFixedSize(250, 450)
 
 
 class ProductManagementWidget(QWidget):
@@ -482,10 +478,21 @@ class ProductDialog(QDialog):
         self.min_stock_input.setValue(5)  # Default min stock level
         form_layout.addRow("Min Stock Level:", self.min_stock_input)
 
+        # --- Expiration Date with calendar icon ---
+        expiration_layout = QHBoxLayout()
         self.expiration_date_input = QDateEdit(calendarPopup=True)
         self.expiration_date_input.setMinimumDate(QDate.currentDate())
         self.expiration_date_input.setDate(QDate.currentDate().addYears(1))  # Default to 1 year from now
-        form_layout.addRow("Expiration Date:", self.expiration_date_input)
+        self.expiration_date_input.setDisplayFormat("yyyy-MM-dd")
+        self.expiration_date_input.setCalendarPopup(True)
+        expiration_layout.addWidget(self.expiration_date_input)
+        # Add a calendar icon button to trigger the popup
+        # calendar_btn = QToolButton()
+        # calendar_btn.setIcon(get_feather_icon("calendar", size=16))
+        # calendar_btn.setToolTip("Show Calendar")
+        # calendar_btn.clicked.connect(self.expiration_date_input.showCalendarPopup)
+        expiration_layout.addStretch()
+        form_layout.addRow("Expiration Date:", expiration_layout)
 
         # Image selection
         image_layout = QHBoxLayout()

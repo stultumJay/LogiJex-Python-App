@@ -1,23 +1,33 @@
+# database_manager.py
+#
+# This module provides the DatabaseManager class, a singleton responsible for all database operations in the inventory management system.
+# It manages MySQL connections, schema creation, CRUD operations for users, products, categories, and sales, and utility queries.
+# All database logic is centralized here for maintainability and consistency.
+#
+# Usage: Instantiated as a singleton (DatabaseManager()), used by other managers (UserManager, ProductManager, etc).
+#
+# Helper modules: Uses mysql-connector for MySQL, dotenv for environment config, hashlib for password hashing.
+
 import hashlib
 from datetime import datetime, timedelta
-from PyQt6.QtSql import QSqlDatabase, QSqlQuery
-from PyQt6.QtWidgets import QMessageBox
-from PyQt6.QtCore import QDate
 import os
 from dotenv import load_dotenv
 import mysql.connector
 from mysql.connector import errorcode
-
+from PyQt6.QtCore import QDate
 
 class DatabaseManager:
+    """
+    Singleton class for managing all MySQL database operations for the inventory system.
+    Handles connection, schema creation, and CRUD for users, products, categories, and sales.
+    """
     _instance = None
 
     def __new__(cls):
+        # Singleton pattern: only one instance exists
         if cls._instance is None:
             cls._instance = super(DatabaseManager, cls).__new__(cls)
-            cls._instance.db = None
-            cls._instance.conn = None  # For direct MySQL connection
-            # Initialize database connection immediately
+            cls._instance.conn = None  # MySQL connection
             try:
                 cls._instance.initialize_database()
             except Exception as e:
@@ -25,23 +35,15 @@ class DatabaseManager:
         return cls._instance
 
     def initialize_database(self):
-        """Initialize database connection, now focusing only on mysql.connector since QMYSQL is not available"""
-        # Load environment variables for database connection
+        """
+        Initialize the MySQL database connection and ensure tables/default data exist.
+        Loads config from .env or defaults. Creates schema if missing.
+        """
         load_dotenv()
-        
-        # Get MySQL connection settings from environment variables or use defaults
         db_host = os.getenv("DB_HOST", "localhost")
         db_user = os.getenv("DB_USER", "root")
         db_password = os.getenv("DB_PASSWORD", "akosijayster")
         db_name = os.getenv("DB_NAME", "inventory_db")
-        
-        # Show available drivers (for debugging)
-        drivers = QSqlDatabase.drivers()
-        print(f"Available database drivers: {', '.join(drivers)}")
-        
-        # Skip QSqlDatabase attempts since we know QMYSQL is not available
-        print("Using direct mysql-connector-python connection")
-        
         try:
             self.conn = mysql.connector.connect(
                 host=db_host,
@@ -50,35 +52,33 @@ class DatabaseManager:
                 database=db_name
             )
             print("Successfully connected using mysql-connector-python")
-            
-            # Initialize database with connector
             self._create_tables_with_connector()
             self._add_default_data_with_connector()
-            
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error",
-                               f"Direct MySQL connection failed: {err}")
+            print(f"Database connection failed: {err}")
             raise Exception(f"Database connection failed: {err}")
-            
+
     def _reconnect_if_needed(self):
-        """Check connection and reconnect if necessary"""
+        """
+        Ensure the MySQL connection is alive, reconnect if needed.
+        """
         if not self.conn:
             self.initialize_database()
             return
-            
         try:
-            # Ping will reconnect if connection is lost
             self.conn.ping(reconnect=True, attempts=3, delay=0.5)
         except mysql.connector.Error as err:
             print(f"Error reconnecting to database: {err}")
             self.initialize_database()
 
     def _create_tables_with_connector(self):
-        """Create tables using direct mysql-connector connection"""
+        """
+        Create all required tables in the MySQL database if they do not exist.
+        """
         try:
             cursor = self.conn.cursor()
-            
             queries = [
+                # Users table
                 """CREATE TABLE IF NOT EXISTS users (
                     id INT PRIMARY KEY AUTO_INCREMENT,
                     username VARCHAR(50) UNIQUE NOT NULL,
@@ -89,10 +89,12 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     CONSTRAINT chk_role CHECK (role IN ('admin', 'manager', 'retailer'))
                 )""",
+                # Categories table
                 """CREATE TABLE IF NOT EXISTS categories (
                     id INT PRIMARY KEY AUTO_INCREMENT,
                     name VARCHAR(50) UNIQUE NOT NULL
                 )""",
+                # Products table
                 """CREATE TABLE IF NOT EXISTS products (
                     id INT PRIMARY KEY AUTO_INCREMENT,
                     name VARCHAR(100) NOT NULL,
@@ -107,6 +109,7 @@ class DatabaseManager:
                     status VARCHAR(20) DEFAULT 'In Stock',
                     FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
                 )""",
+                # Sales table
                 """CREATE TABLE IF NOT EXISTS sales (
                     id INT PRIMARY KEY AUTO_INCREMENT,
                     product_id INT,
@@ -118,38 +121,33 @@ class DatabaseManager:
                     FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE SET NULL
                 )"""
             ]
-
             for q_text in queries:
                 cursor.execute(q_text)
-                
             self.conn.commit()
             cursor.close()
-            
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error",
-                               f"Failed to create tables with connector: {err}")
+            print(f"Failed to create tables with connector: {err}")
             raise Exception(f"Database table creation failed: {err}")
 
     def _add_default_data_with_connector(self):
-        """Add default data using direct mysql-connector connection"""
+        """
+        Add default categories, users, and sample products if tables are empty.
+        """
         try:
             cursor = self.conn.cursor()
-            
-            # Add default categories if not exist
+            # Add default categories
             cursor.execute("SELECT COUNT(*) FROM categories")
             if cursor.fetchone()[0] == 0:
                 categories = ["Meat", "Seafood", "Pantry Items", "Junk Food", "Pet Food (Wet & Dry)"]
                 for cat in categories:
                     cursor.execute("INSERT INTO categories (name) VALUES (%s)", (cat,))
                     print(f"Default category '{cat}' created.")
-
-            # Add default users if not exist
+            # Add default users
             default_users = {
                 "admin": {"password": "admin", "email": "admin@example.com"},
                 "manager": {"password": "password", "email": "manager@example.com"},
                 "retailer": {"password": "password", "email": "retailer@example.com"}
             }
-            
             for role, data in default_users.items():
                 cursor.execute(f"SELECT COUNT(*) FROM users WHERE username = %s", (role,))
                 if cursor.fetchone()[0] == 0:
@@ -159,177 +157,35 @@ class DatabaseManager:
                         (role, password_hash, role, data["email"])
                     )
                     print(f"Default {role} user created.")
-            
-            # Add some sample products if not exist
+            # Add sample products
             cursor.execute("SELECT COUNT(*) FROM products")
             if cursor.fetchone()[0] == 0:
-                # Get category IDs
                 cursor.execute("SELECT id, name FROM categories")
-                categories = {}
-                for id, name in cursor.fetchall():
-                    categories[name] = id
-                
-                # Sample products with brands
+                categories = {name: id for id, name in cursor.fetchall()}
                 sample_products = [
                     {"name": "Chicken Breast", "category": "Meat", "brand": "FreshFarms", "price": 150.00, "stock": 15},
                     {"name": "Tuna Steak", "category": "Seafood", "brand": "OceanHarvest", "price": 120.00, "stock": 2},
                     {"name": "Potato Chips", "category": "Junk Food", "brand": "CrispyBite", "price": 50.00, "stock": 20},
                     {"name": "Dog Food Premium", "category": "Pet Food (Wet & Dry)", "brand": "PetNutri", "price": 200.00, "stock": 4}
                 ]
-                
                 for product in sample_products:
                     category_id = categories.get(product["category"])
                     if category_id:
-                        # Determine status based on stock level
                         status = "In Stock"
                         if product["stock"] <= 0:
                             status = "No Stock"
                         elif product["stock"] <= 5:
                             status = "Low Stock"
-                            
                         cursor.execute(
                             "INSERT INTO products (name, category_id, brand, price, stock, min_stock_level, status) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                             (product["name"], category_id, product["brand"], product["price"], product["stock"], 5, status)
                         )
                         print(f"Sample product '{product['name']}' created.")
-            
             self.conn.commit()
             cursor.close()
-            
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error",
-                               f"Failed to add default data with connector: {err}")
+            print(f"Failed to add default data with connector: {err}")
             raise Exception(f"Failed to add default data: {err}")
-
-    def _create_tables(self):
-        queries = [
-            """CREATE TABLE IF NOT EXISTS users (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password_hash VARCHAR(64) NOT NULL,
-                role VARCHAR(20) CHECK(role IN ('admin', 'manager', 'retailer')) NOT NULL,
-                email VARCHAR(100) UNIQUE,
-                is_active BOOLEAN DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )""",
-            """CREATE TABLE IF NOT EXISTS categories (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                name VARCHAR(50) UNIQUE NOT NULL
-            )""",
-            """CREATE TABLE IF NOT EXISTS products (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                name VARCHAR(100) NOT NULL,
-                category_id INT,
-                brand VARCHAR(50),
-                price DECIMAL(10,2) NOT NULL,
-                stock INT NOT NULL,
-                image_path VARCHAR(255),
-                expiration_date DATE,
-                last_restocked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                min_stock_level INT DEFAULT 5,
-                status VARCHAR(20) DEFAULT 'In Stock',
-                FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
-            )""",
-            """CREATE TABLE IF NOT EXISTS sales (
-                id INT PRIMARY KEY AUTO_INCREMENT,
-                product_id INT,
-                quantity INT NOT NULL,
-                total_price DECIMAL(10,2) NOT NULL,
-                seller_id INT,
-                sale_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
-                FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE SET NULL
-            )"""
-        ]
-
-        query = QSqlQuery(self.db)
-        for q_text in queries:
-            if not query.exec(q_text):
-                QMessageBox.critical(None, "Database Error",
-                                     f"Query failed: {query.lastError().text()}\nQuery: {q_text}")
-                raise Exception(f"Database table creation failed for query: {q_text}")
-
-    def _add_default_data(self):
-        query = QSqlQuery(self.db)
-
-        # Add default categories if not exist
-        if not query.exec("SELECT COUNT(*) FROM categories"):
-            print(f"Error checking categories: {query.lastError().text()}")
-            return
-        query.next()
-        if query.value(0) == 0:
-            categories = ["Meat", "Seafood", "Pantry Items", "Junk Food", "Pet Food (Wet & Dry)"]
-            for cat in categories:
-                query.prepare("INSERT INTO categories (name) VALUES (?)")
-                query.addBindValue(cat)
-                if not query.exec():
-                    print(f"Error adding category {cat}: {query.lastError().text()}")
-
-        # Add default users if not exist
-        default_users = {
-            "admin": {"password": "admin", "email": "admin@example.com"},
-            "manager": {"password": "password", "email": "manager@example.com"},
-            "retailer": {"password": "password", "email": "retailer@example.com"}
-        }
-        for role, data in default_users.items():
-            if not query.exec(f"SELECT COUNT(*) FROM users WHERE username = '{role}'"):
-                print(f"Error checking {role} user: {query.lastError().text()}")
-                continue
-            query.next()
-            if query.value(0) == 0:
-                password_hash = hashlib.sha256(data["password"].encode()).hexdigest()
-                query.prepare(
-                    "INSERT INTO users (username, password_hash, role, email, is_active) VALUES (?, ?, ?, ?, 1)")
-                query.addBindValue(role)
-                query.addBindValue(password_hash)
-                query.addBindValue(role)
-                query.addBindValue(data["email"])
-                if not query.exec():
-                    print(f"Error adding default {role}: {query.lastError().text()}")
-                else:
-                    print(f"Default {role} user created.")
-                    
-        # Add some sample products if not exist
-        if not query.exec("SELECT COUNT(*) FROM products"):
-            print(f"Error checking products: {query.lastError().text()}")
-            return
-        query.next()
-        if query.value(0) == 0:
-            # Get category IDs
-            categories = {}
-            if query.exec("SELECT id, name FROM categories"):
-                while query.next():
-                    categories[query.value(1)] = query.value(0)
-            
-            # Sample products with brands
-            sample_products = [
-                {"name": "Chicken Breast", "category": "Meat", "brand": "FreshFarms", "price": 150.00, "stock": 15},
-                {"name": "Tuna Steak", "category": "Seafood", "brand": "OceanHarvest", "price": 120.00, "stock": 2},
-                {"name": "Potato Chips", "category": "Junk Food", "brand": "CrispyBite", "price": 50.00, "stock": 20},
-                {"name": "Dog Food Premium", "category": "Pet Food (Wet & Dry)", "brand": "PetNutri", "price": 200.00, "stock": 4}
-            ]
-            
-            for product in sample_products:
-                category_id = categories.get(product["category"])
-                if category_id:
-                    # Determine status based on stock level
-                    status = "In Stock"
-                    if product["stock"] <= 0:
-                        status = "No Stock"
-                    elif product["stock"] <= 5:
-                        status = "Low Stock"
-                        
-                    query.prepare(
-                        "INSERT INTO products (name, category_id, brand, price, stock, min_stock_level, status) VALUES (?, ?, ?, ?, ?, ?, ?)")
-                    query.addBindValue(product["name"])
-                    query.addBindValue(category_id)
-                    query.addBindValue(product["brand"])
-                    query.addBindValue(product["price"])
-                    query.addBindValue(product["stock"])
-                    query.addBindValue(5)  # Default min_stock_level
-                    query.addBindValue(status)
-                    if not query.exec():
-                        print(f"Error adding product {product['name']}: {query.lastError().text()}")
 
     def authenticate_user(self, username, password):
         print(f"Authenticating user: {username}")
@@ -361,7 +217,7 @@ class DatabaseManager:
                 cursor.close()
                 return user_data
             except mysql.connector.Error as err:
-                QMessageBox.critical(None, "Database Error", f"Authentication query failed: {err}")
+                print(f"Authentication query failed: {err}")
                 return None
         
         # If using QSqlDatabase
@@ -372,7 +228,7 @@ class DatabaseManager:
         query.addBindValue(password_hash_sha256)
         query.addBindValue(password_hash_md5)
         if not query.exec():
-            QMessageBox.critical(None, "Database Error", f"Authentication query failed: {query.lastError().text()}")
+            print(f"Authentication query failed: {query.lastError().text()}")
             return None
         if query.next():
             user_data = {
@@ -401,13 +257,13 @@ class DatabaseManager:
                 cursor.close()
                 return users
             except mysql.connector.Error as err:
-                QMessageBox.critical(None, "Database Error", f"Failed to get users: {err}")
+                print(f"Failed to get users: {err}")
                 return []
         
         # If using QSqlDatabase
         query = QSqlQuery(self.db)
         if not query.exec("SELECT id, username, role, email, is_active FROM users"):
-            QMessageBox.critical(None, "Database Error", f"Failed to get users: {query.lastError().text()}")
+            print(f"Failed to get users: {query.lastError().text()}")
             return []
         users = []
         while query.next():
@@ -448,7 +304,7 @@ class DatabaseManager:
                 cursor.close()
                 return True
             except mysql.connector.Error as err:
-                QMessageBox.critical(None, "Database Error", f"Failed to add user: {err}")
+                print(f"Failed to add user: {err}")
                 return False
         
         # If using QSqlDatabase
@@ -459,7 +315,7 @@ class DatabaseManager:
         query.addBindValue(role)
         query.addBindValue(email)
         if not query.exec():
-            QMessageBox.critical(None, "Database Error", f"Failed to add user: {query.lastError().text()}")
+            print(f"Failed to add user: {query.lastError().text()}")
             return False
         return True
 
@@ -597,59 +453,84 @@ class DatabaseManager:
     def get_products(self, category_id=None, search_term=None, min_stock=None, max_stock=None):
         """
         Get products with optional filtering.
-        
-        Args:
-            category_id: Filter by category ID
-            search_term: Search in name, category, or brand
-            min_stock: Filter by minimum stock level
-            max_stock: Filter by maximum stock level
-            
-        Returns:
-            List of product dictionaries
+        Returns a list of product dictionaries with all required keys.
         """
-        # Always check connection before operations
         self._reconnect_if_needed()
-        
-        try:
-            cursor = self.conn.cursor(dictionary=True)
-            
-            # Build the SQL query with appropriate filters
-            sql = """
-                SELECT p.id, p.name, p.brand, c.name as category, p.price, p.stock, 
-                       p.min_stock_level, p.image_path, p.expiration_date, p.status,
-                       p.category_id
-                FROM products p 
-                JOIN categories c ON p.category_id = c.id 
-                WHERE 1=1
-            """
-            params = []
-            
-            if category_id:
-                sql += " AND p.category_id = %s"
-                params.append(category_id)
-                
-            if search_term:
-                sql += " AND (p.name LIKE %s OR c.name LIKE %s OR p.brand LIKE %s)"
-                search_pattern = f"%{search_term}%"
-                params.extend([search_pattern, search_pattern, search_pattern])
-                
-            if min_stock is not None:
-                sql += " AND p.stock <= %s"
-                params.append(min_stock)
-                
-            if max_stock is not None:
-                sql += " AND p.stock >= %s"
-                params.append(max_stock)
-            
-            cursor.execute(sql, params)
-            products = cursor.fetchall()
-                
-            cursor.close()
-            return products
-                
-        except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to get products: {err}")
+        # If using direct mysql-connector
+        if self.conn is not None:
+            try:
+                cursor = self.conn.cursor(dictionary=True)
+                sql = """
+                    SELECT p.id, p.name, p.brand, c.name as category, p.price, p.stock, 
+                           p.min_stock_level, p.image_path, p.expiration_date, p.status,
+                           p.category_id
+                    FROM products p 
+                    JOIN categories c ON p.category_id = c.id 
+                    WHERE 1=1
+                """
+                params = []
+                if category_id:
+                    sql += " AND p.category_id = %s"
+                    params.append(category_id)
+                if search_term:
+                    sql += " AND (p.name LIKE %s OR c.name LIKE %s OR p.brand LIKE %s)"
+                    search_pattern = f"%{search_term}%"
+                    params.extend([search_pattern, search_pattern, search_pattern])
+                if min_stock is not None:
+                    sql += " AND p.stock <= %s"
+                    params.append(min_stock)
+                if max_stock is not None:
+                    sql += " AND p.stock >= %s"
+                    params.append(max_stock)
+                cursor.execute(sql, params)
+                products = cursor.fetchall()
+                cursor.close()
+                return products
+            except mysql.connector.Error as err:
+                print(f"Failed to get products: {err}")
+                return []
+        # Fallback: QSqlDatabase
+        query = QSqlQuery(self.db)
+        sql = ("SELECT p.id, p.name, p.brand, c.name as category, p.price, p.stock, "
+               "p.min_stock_level, p.image_path, p.expiration_date, p.status, p.category_id "
+               "FROM products p JOIN categories c ON p.category_id = c.id WHERE 1=1")
+        params = []
+        if category_id:
+            sql += " AND p.category_id = ?"
+            params.append(category_id)
+        if search_term:
+            sql += " AND (p.name LIKE ? OR c.name LIKE ? OR p.brand LIKE ?)"
+            search_pattern = f"%{search_term}%"
+            params.extend([search_pattern, search_pattern, search_pattern])
+        if min_stock is not None:
+            sql += " AND p.stock <= ?"
+            params.append(min_stock)
+        if max_stock is not None:
+            sql += " AND p.stock >= ?"
+            params.append(max_stock)
+        query.prepare(sql)
+        for param in params:
+            query.addBindValue(param)
+        if not query.exec():
+            print(f"Failed to get products: {query.lastError().text()}")
             return []
+        products = []
+        while query.next():
+            # Always include all keys, even if None
+            products.append({
+                'id': query.value(0),
+                'name': query.value(1),
+                'brand': query.value(2),
+                'category': query.value(3),
+                'price': query.value(4),
+                'stock': query.value(5),
+                'min_stock_level': query.value(6),
+                'image_path': query.value(7),
+                'expiration_date': query.value(8),
+                'status': query.value(9),
+                'category_id': query.value(10)
+            })
+        return products
 
     def get_product_by_id(self, product_id):
         """Get product details by ID"""
@@ -675,7 +556,7 @@ class DatabaseManager:
                 
             return product
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to get product by ID: {err}")
+            print(f"Failed to get product by ID: {err}")
             return None
 
     def add_product(self, name, category_id, brand, price, stock, image_path=None, expiration_date=None, min_stock_level=5):
@@ -720,7 +601,7 @@ class DatabaseManager:
             cursor.close()
             return True
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to add product: {err}")
+            print(f"Failed to add product: {err}")
             return False
 
     def update_product(self, product_id, name, category_id, brand, price, stock, image_path=None, expiration_date=None, min_stock_level=5):
@@ -752,7 +633,7 @@ class DatabaseManager:
             cursor.close()
             return True
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to update product: {err}")
+            print(f"Failed to update product: {err}")
             return False
 
     def delete_product(self, product_id):
@@ -778,7 +659,7 @@ class DatabaseManager:
             cursor.close()
             return True
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to delete product: {err}")
+            print(f"Failed to delete product: {err}")
             if self.conn:
                 self.conn.rollback()
             return False
@@ -798,7 +679,7 @@ class DatabaseManager:
             cursor.close()
             return categories
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to get categories: {err}")
+            print(f"Failed to get categories: {err}")
             return []
 
     def add_category(self, name):
@@ -822,7 +703,7 @@ class DatabaseManager:
             cursor.close()
             return True
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to add category: {err}")
+            print(f"Failed to add category: {err}")
             return False
 
     def update_category(self, category_id, name):
@@ -838,7 +719,7 @@ class DatabaseManager:
             cursor.close()
             return True
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to update category: {err}")
+            print(f"Failed to update category: {err}")
             return False
 
     def delete_category(self, category_id):
@@ -856,8 +737,7 @@ class DatabaseManager:
             
             # If category is used by products, notify user
             if count > 0:
-                QMessageBox.warning(None, "Cannot Delete", 
-                                   f"This category is used by {count} products. Please reassign them first.")
+                print(f"This category is used by {count} products. Please reassign them first.")
                 cursor.close()
                 return False
             
@@ -867,7 +747,7 @@ class DatabaseManager:
             cursor.close()
             return True
         except mysql.connector.Error as err:
-            QMessageBox.critical(None, "Database Error", f"Failed to delete category: {err}")
+            print(f"Failed to delete category: {err}")
             if self.conn:
                 self.conn.rollback()
             return False
@@ -886,7 +766,7 @@ class DatabaseManager:
             product = cursor.fetchone()
             
             if not product:
-                QMessageBox.critical(None, "Database Error", "Failed to get product stock")
+                print("Failed to get product stock")
                 return False
                 
             current_stock = product['stock']
@@ -894,7 +774,7 @@ class DatabaseManager:
             
             # Check if enough stock
             if current_stock < quantity:
-                QMessageBox.warning(None, "Insufficient Stock", "Not enough stock available for this sale")
+                print("Insufficient Stock")
                 return False
                 
             # Update product stock
@@ -924,7 +804,7 @@ class DatabaseManager:
         except mysql.connector.Error as err:
             if self.conn:
                 self.conn.rollback()
-            QMessageBox.critical(None, "Database Error", f"Error during sale: {str(err)}")
+            print(f"Error during sale: {str(err)}")
             return False
 
     def undo_sale(self, sale_id):
@@ -941,7 +821,7 @@ class DatabaseManager:
             sale = cursor.fetchone()
             
             if not sale:
-                QMessageBox.critical(None, "Database Error", "Failed to get sale details")
+                print("Failed to get sale details")
                 return False
                 
             product_id = sale['product_id']
@@ -959,7 +839,7 @@ class DatabaseManager:
             product = cursor.fetchone()
             
             if not product:
-                QMessageBox.critical(None, "Database Error", "Failed to get product stock")
+                print("Failed to get product stock")
                 return False
                 
             current_stock = product['stock']
@@ -989,7 +869,7 @@ class DatabaseManager:
         except mysql.connector.Error as err:
             if self.conn:
                 self.conn.rollback()
-            QMessageBox.critical(None, "Database Error", f"Error during sale undo: {str(err)}")
+            print(f"Error during sale undo: {str(err)}")
             return False
 
     def get_low_stock_items(self):
@@ -1009,7 +889,7 @@ class DatabaseManager:
                 cursor.close()
                 return items
             except mysql.connector.Error as err:
-                QMessageBox.critical(None, "Database Error", f"Failed to get low stock items: {err}")
+                print(f"Failed to get low stock items: {err}")
                 return []
         
         # Original QSql implementation
@@ -1021,7 +901,7 @@ class DatabaseManager:
             WHERE p.stock <= p.min_stock_level AND p.stock > 0
         """)
         if not query.exec():
-            QMessageBox.critical(None, "Database Error", f"Failed to get low stock items: {query.lastError().text()}")
+            print(f"Failed to get low stock items: {query.lastError().text()}")
             return []
             
         items = []
@@ -1066,7 +946,7 @@ class DatabaseManager:
                 cursor.close()
                 return items
             except mysql.connector.Error as err:
-                QMessageBox.critical(None, "Database Error", f"Failed to get expiring items: {err}")
+                print(f"Failed to get expiring items: {err}")
                 return []
         
         # Original QSql implementation
@@ -1085,7 +965,7 @@ class DatabaseManager:
         query.addBindValue(expiry_threshold)
         
         if not query.exec():
-            QMessageBox.critical(None, "Database Error", f"Failed to get expiring items: {query.lastError().text()}")
+            print(f"Failed to get expiring items: {query.lastError().text()}")
             return []
             
         items = []
@@ -1163,7 +1043,7 @@ class DatabaseManager:
                 return sales
                 
             except mysql.connector.Error as err:
-                QMessageBox.critical(None, "Database Error", f"Failed to get sales report: {err}")
+                print(f"Failed to get sales report: {err}")
                 return []
         
         # If using QSqlDatabase
@@ -1182,7 +1062,7 @@ class DatabaseManager:
         query.addBindValue(end_datetime)
         
         if not query.exec():
-            QMessageBox.critical(None, "Database Error", f"Failed to get sales report: {query.lastError().text()}")
+            print(f"Failed to get sales report: {query.lastError().text()}")
             return []
             
         sales = []
@@ -1227,7 +1107,7 @@ class DatabaseManager:
                 cursor.close()
                 return history
             except mysql.connector.Error as err:
-                QMessageBox.critical(None, "Database Error", f"Failed to get inventory history: {err}")
+                print(f"Failed to get inventory history: {err}")
                 return []
         
         # Original QSql implementation
@@ -1242,7 +1122,7 @@ class DatabaseManager:
         """)
         
         if not query.exec():
-            QMessageBox.critical(None, "Database Error", f"Failed to get inventory history: {query.lastError().text()}")
+            print(f"Failed to get inventory history: {query.lastError().text()}")
             return []
             
         history = []
