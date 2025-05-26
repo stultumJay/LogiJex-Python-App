@@ -11,7 +11,7 @@ def reset_database():
     # Get MySQL connection settings from environment variables or use defaults
     db_host = os.getenv("DB_HOST", "localhost")
     db_user = os.getenv("DB_USER", "root")
-    db_password = os.getenv("DB_PASSWORD", "akosijayster")
+    db_password = os.getenv("DB_PASSWORD", "")
     db_name = os.getenv("DB_NAME", "inventory_db")
     
     try:
