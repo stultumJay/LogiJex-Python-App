@@ -163,10 +163,10 @@ class DatabaseManager:
                 cursor.execute("SELECT id, name FROM categories")
                 categories = {name: id for id, name in cursor.fetchall()}
                 sample_products = [
-                    {"name": "Chicken Breast", "category": "Meat", "brand": "FreshFarms", "price": 150.00, "stock": 15},
-                    {"name": "Tuna Steak", "category": "Seafood", "brand": "OceanHarvest", "price": 120.00, "stock": 2},
-                    {"name": "Potato Chips", "category": "Junk Food", "brand": "CrispyBite", "price": 50.00, "stock": 20},
-                    {"name": "Dog Food Premium", "category": "Pet Food (Wet & Dry)", "brand": "PetNutri", "price": 200.00, "stock": 4}
+                    {"name": "Chicken Breast", "category": "Meat", "brand": "FreshFarms", "price": 150.00, "stock": 15, "image_path": "assets/product_images/chicken_breast.jpg"},
+                    {"name": "Tuna Steak", "category": "Seafood", "brand": "OceanHarvest", "price": 120.00, "stock": 2, "image_path": "assets/product_images/tuna_steak.jpg"},
+                    {"name": "Potato Chips", "category": "Junk Food", "brand": "CrispyBite", "price": 50.00, "stock": 20, "image_path": "assets/product_images/potato_chips.jpg"},
+                    {"name": "Dog Food Premium", "category": "Pet Food (Wet & Dry)", "brand": "PetNutri", "price": 200.00, "stock": 4, "image_path": "assets/product_images/dog_food.jpg"}
                 ]
                 for product in sample_products:
                     category_id = categories.get(product["category"])
@@ -177,8 +177,8 @@ class DatabaseManager:
                         elif product["stock"] <= 5:
                             status = "Low Stock"
                         cursor.execute(
-                            "INSERT INTO products (name, category_id, brand, price, stock, min_stock_level, status) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                            (product["name"], category_id, product["brand"], product["price"], product["stock"], 5, status)
+                            "INSERT INTO products (name, category_id, brand, price, stock, min_stock_level, status, image_path) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                            (product["name"], category_id, product["brand"], product["price"], product["stock"], 5, status, product["image_path"])
                         )
                         print(f"Sample product '{product['name']}' created.")
             self.conn.commit()
@@ -220,35 +220,15 @@ class DatabaseManager:
                 print(f"Authentication query failed: {err}")
                 return None
         
-        # If using QSqlDatabase
-        query = QSqlQuery(self.db)
-        query.prepare(
-            "SELECT id, username, role, email, is_active FROM users WHERE username = ? AND (password_hash = ? OR password_hash = ?) AND is_active = 1")
-        query.addBindValue(username)
-        query.addBindValue(password_hash_sha256)
-        query.addBindValue(password_hash_md5)
-        if not query.exec():
-            print(f"Authentication query failed: {query.lastError().text()}")
-            return None
-        if query.next():
-            user_data = {
-                "id": query.value(0),
-                "username": query.value(1),
-                "role": query.value(2),
-                "email": query.value(3),
-                "is_active": bool(query.value(4))
-            }
-            return user_data
+        # If connection is None, authentication fails
+        print("Database connection not available for authentication.")
         return None
 
     def get_users(self):
         """
         Get all users from the database.
         Returns a list of dictionaries with user data.
-        
-        This method handles both QSqlDatabase and direct mysql-connector connections.
         """
-        # If using direct mysql-connector
         if self.conn is not None:
             try:
                 cursor = self.conn.cursor(dictionary=True)
@@ -260,21 +240,8 @@ class DatabaseManager:
                 print(f"Failed to get users: {err}")
                 return []
         
-        # If using QSqlDatabase
-        query = QSqlQuery(self.db)
-        if not query.exec("SELECT id, username, role, email, is_active FROM users"):
-            print(f"Failed to get users: {query.lastError().text()}")
-            return []
-        users = []
-        while query.next():
-            users.append({
-                "id": query.value(0),
-                "username": query.value(1),
-                "role": query.value(2),
-                "email": query.value(3),
-                "is_active": bool(query.value(4))
-            })
-        return users
+        print("Database connection not available to get users.")
+        return []
 
     def add_user(self, username, password, role, email):
         """
@@ -288,13 +255,10 @@ class DatabaseManager:
             
         Returns:
             True if user was added successfully, False otherwise
-            
-        This method handles both QSqlDatabase and direct mysql-connector connections.
         """
         # Hash the password using SHA-256
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         
-        # If using direct mysql-connector
         if self.conn is not None:
             try:
                 cursor = self.conn.cursor()
@@ -307,17 +271,8 @@ class DatabaseManager:
                 print(f"Failed to add user: {err}")
                 return False
         
-        # If using QSqlDatabase
-        query = QSqlQuery(self.db)
-        query.prepare("INSERT INTO users (username, password_hash, role, email, is_active) VALUES (?, ?, ?, ?, 1)")
-        query.addBindValue(username)
-        query.addBindValue(password_hash)
-        query.addBindValue(role)
-        query.addBindValue(email)
-        if not query.exec():
-            print(f"Failed to add user: {query.lastError().text()}")
-            return False
-        return True
+        print("Database connection not available to add user.")
+        return False
 
     def update_user(self, user_id, username, role, email, is_active, password=None):
         """
@@ -367,50 +322,10 @@ class DatabaseManager:
                 self.conn.commit()
                 return cursor.rowcount > 0
                 
-            # Use QSqlQuery
+            # If conn is not available
             else:
-                from PyQt6.QtSql import QSqlQuery
-                query = QSqlQuery(self.db)
-                
-                # First check if the username or email already exists for a DIFFERENT user
-                query.prepare("SELECT id FROM users WHERE (username = ? OR email = ?) AND id != ?")
-                query.addBindValue(username)
-                query.addBindValue(email)
-                query.addBindValue(user_id)
-                query.exec()
-                if query.next():
-                    return False  # Username or email already exists for another user
-                    
-                if password:  # If password was changed
-                    import hashlib
-                    password_hash = hashlib.sha256(password.encode()).hexdigest()
-                    query.prepare("""
-                        UPDATE users 
-                        SET username = ?, role = ?, email = ?, password_hash = ?, is_active = ?
-                        WHERE id = ?
-                    """)
-                    query.addBindValue(username)
-                    query.addBindValue(role)
-                    query.addBindValue(email)
-                    query.addBindValue(password_hash)
-                    query.addBindValue(is_active)
-                    query.addBindValue(user_id)
-                else:  # Just update without changing password
-                    query.prepare("""
-                        UPDATE users 
-                        SET username = ?, role = ?, email = ?, is_active = ?
-                        WHERE id = ?
-                    """)
-                    query.addBindValue(username)
-                    query.addBindValue(role)
-                    query.addBindValue(email)
-                    query.addBindValue(is_active)
-                    query.addBindValue(user_id)
-                    
-                success = query.exec()
-                if not success:
-                    print(f"SQL error updating user: {query.lastError().text()}")
-                return success
+                print("Database connection not available to update user.")
+                return False
         except Exception as e:
             print(f"Error updating user: {e}")
             return False
@@ -436,16 +351,10 @@ class DatabaseManager:
                 self.conn.commit()
                 return cursor.rowcount > 0
                 
-            # Use QSqlQuery
+            # If conn is not available
             else:
-                from PyQt6.QtSql import QSqlQuery
-                query = QSqlQuery(self.db)
-                query.prepare("DELETE FROM users WHERE id = ?")
-                query.addBindValue(user_id)
-                success = query.exec()
-                if not success:
-                    print(f"SQL error deleting user: {query.lastError().text()}")
-                return success
+                print("Database connection not available to delete user.")
+                return False
         except Exception as e:
             print(f"Error deleting user: {e}")
             return False
@@ -456,7 +365,6 @@ class DatabaseManager:
         Returns a list of product dictionaries with all required keys.
         """
         self._reconnect_if_needed()
-        # If using direct mysql-connector
         if self.conn is not None:
             try:
                 cursor = self.conn.cursor(dictionary=True)
@@ -489,48 +397,9 @@ class DatabaseManager:
             except mysql.connector.Error as err:
                 print(f"Failed to get products: {err}")
                 return []
-        # Fallback: QSqlDatabase
-        query = QSqlQuery(self.db)
-        sql = ("SELECT p.id, p.name, p.brand, c.name as category, p.price, p.stock, "
-               "p.min_stock_level, p.image_path, p.expiration_date, p.status, p.category_id "
-               "FROM products p JOIN categories c ON p.category_id = c.id WHERE 1=1")
-        params = []
-        if category_id:
-            sql += " AND p.category_id = ?"
-            params.append(category_id)
-        if search_term:
-            sql += " AND (p.name LIKE ? OR c.name LIKE ? OR p.brand LIKE ?)"
-            search_pattern = f"%{search_term}%"
-            params.extend([search_pattern, search_pattern, search_pattern])
-        if min_stock is not None:
-            sql += " AND p.stock <= ?"
-            params.append(min_stock)
-        if max_stock is not None:
-            sql += " AND p.stock >= ?"
-            params.append(max_stock)
-        query.prepare(sql)
-        for param in params:
-            query.addBindValue(param)
-        if not query.exec():
-            print(f"Failed to get products: {query.lastError().text()}")
-            return []
-        products = []
-        while query.next():
-            # Always include all keys, even if None
-            products.append({
-                'id': query.value(0),
-                'name': query.value(1),
-                'brand': query.value(2),
-                'category': query.value(3),
-                'price': query.value(4),
-                'stock': query.value(5),
-                'min_stock_level': query.value(6),
-                'image_path': query.value(7),
-                'expiration_date': query.value(8),
-                'status': query.value(9),
-                'category_id': query.value(10)
-            })
-        return products
+        
+        print("Database connection not available to get products.")
+        return []
 
     def get_product_by_id(self, product_id):
         """Get product details by ID"""
@@ -873,7 +742,9 @@ class DatabaseManager:
             return False
 
     def get_low_stock_items(self):
-        # Check if we're using MySQL connector instead of QSql
+        """
+        Get low stock items from the database.
+        """
         if self.conn is not None:
             try:
                 cursor = self.conn.cursor(dictionary=True)
@@ -892,35 +763,13 @@ class DatabaseManager:
                 print(f"Failed to get low stock items: {err}")
                 return []
         
-        # Original QSql implementation
-        query = QSqlQuery(self.db)
-        query.prepare("""
-            SELECT p.id, p.name, p.brand, c.name, p.price, p.stock, p.min_stock_level, p.image_path, p.status
-            FROM products p 
-            JOIN categories c ON p.category_id = c.id 
-            WHERE p.stock <= p.min_stock_level AND p.stock > 0
-        """)
-        if not query.exec():
-            print(f"Failed to get low stock items: {query.lastError().text()}")
-            return []
-            
-        items = []
-        while query.next():
-            items.append({
-                "id": query.value(0),
-                "name": query.value(1),
-                "brand": query.value(2),
-                "category": query.value(3),
-                "price": query.value(4),
-                "stock": query.value(5),
-                "min_stock_level": query.value(6),
-                "image_path": query.value(7),
-                "status": query.value(8)
-            })
-        return items
+        print("Database connection not available to get low stock items.")
+        return []
 
     def get_expiring_items(self, days_threshold=7):
-        # Check if we're using MySQL connector instead of QSql
+        """
+        Get expiring items from the database.
+        """
         if self.conn is not None:
             try:
                 cursor = self.conn.cursor(dictionary=True)
@@ -949,39 +798,8 @@ class DatabaseManager:
                 print(f"Failed to get expiring items: {err}")
                 return []
         
-        # Original QSql implementation
-        query = QSqlQuery(self.db)
-        current_date = QDate.currentDate()
-        expiry_threshold = current_date.addDays(days_threshold).toString("yyyy-MM-dd")
-        
-        query.prepare("""
-            SELECT p.id, p.name, p.brand, c.name, p.price, p.stock, p.expiration_date, p.image_path, p.status
-            FROM products p 
-            JOIN categories c ON p.category_id = c.id 
-            WHERE p.expiration_date IS NOT NULL 
-            AND p.expiration_date <= ? 
-            AND p.expiration_date >= CURRENT_DATE
-        """)
-        query.addBindValue(expiry_threshold)
-        
-        if not query.exec():
-            print(f"Failed to get expiring items: {query.lastError().text()}")
-            return []
-            
-        items = []
-        while query.next():
-            items.append({
-                "id": query.value(0),
-                "name": query.value(1),
-                "brand": query.value(2),
-                "category": query.value(3),
-                "price": query.value(4),
-                "stock": query.value(5),
-                "expiration_date": query.value(6),
-                "image_path": query.value(7),
-                "status": query.value(8)
-            })
-        return items
+        print("Database connection not available to get expiring items.")
+        return []
 
     def get_sales_reports(self, start_date, end_date):
         """
@@ -993,8 +811,6 @@ class DatabaseManager:
             
         Returns:
             List of sale dictionaries with detailed information
-            
-        This method handles both QSqlDatabase and direct mysql-connector connections.
         """
         # Convert dates to string format
         if isinstance(start_date, QDate):
@@ -1006,7 +822,6 @@ class DatabaseManager:
         start_datetime = f"{start_date} 00:00:00"
         end_datetime = f"{end_date} 23:59:59"
         
-        # If using direct mysql-connector
         if self.conn is not None:
             try:
                 cursor = self.conn.cursor(dictionary=True)
@@ -1046,46 +861,13 @@ class DatabaseManager:
                 print(f"Failed to get sales report: {err}")
                 return []
         
-        # If using QSqlDatabase
-        query = QSqlQuery(self.db)
-        query.prepare("""
-            SELECT s.id, p.name, p.brand, c.name, s.quantity, s.total_price, 
-                   u.username, s.sale_time
-            FROM sales s
-            LEFT JOIN products p ON s.product_id = p.id
-            LEFT JOIN categories c ON p.category_id = c.id
-            LEFT JOIN users u ON s.seller_id = u.id
-            WHERE s.sale_time BETWEEN ? AND ?
-            ORDER BY s.sale_time DESC
-        """)
-        query.addBindValue(start_datetime)
-        query.addBindValue(end_datetime)
-        
-        if not query.exec():
-            print(f"Failed to get sales report: {query.lastError().text()}")
-            return []
-            
-        sales = []
-        while query.next():
-            # Handle case where product might have been deleted
-            product_name = query.value(1) if query.value(1) else "Deleted Product"
-            brand = query.value(2) if query.value(2) else "N/A"
-            category = query.value(3) if query.value(3) else "N/A"
-            
-            sales.append({
-                "id": query.value(0),
-                "product_name": product_name,
-                "brand": brand,
-                "category": category,
-                "quantity": query.value(4),
-                "total_price": query.value(5),
-                "seller": query.value(6),
-                "sale_time": query.value(7)
-            })
-        return sales
+        print("Database connection not available to get sales reports.")
+        return []
 
     def get_inventory_history(self):
-        # If using direct mysql-connector
+        """
+        Get inventory history from the database.
+        """
         if self.conn is not None:
             try:
                 cursor = self.conn.cursor(dictionary=True)
@@ -1110,38 +892,13 @@ class DatabaseManager:
                 print(f"Failed to get inventory history: {err}")
                 return []
         
-        # Original QSql implementation
-        # This method will return a simulated inventory history
-        # In a real system, you would track every inventory change in a separate table
-        query = QSqlQuery(self.db)
-        query.prepare("""
-            SELECT p.id, p.name, p.brand, c.name, p.price, p.stock, p.last_restocked, p.status
-            FROM products p
-            JOIN categories c ON p.category_id = c.id
-            ORDER BY p.last_restocked DESC
-        """)
-        
-        if not query.exec():
-            print(f"Failed to get inventory history: {query.lastError().text()}")
-            return []
-            
-        history = []
-        while query.next():
-            history.append({
-                "id": query.value(0),
-                "name": query.value(1),
-                "brand": query.value(2),
-                "category": query.value(3),
-                "price": query.value(4),
-                "current_stock": query.value(5),
-                "last_restocked": query.value(6),
-                "status": query.value(7)
-            })
-        return history
+        print("Database connection not available to get inventory history.")
+        return []
 
     def execute_query(self, query, params=None):
         """
         Execute a general SQL query and return the results.
+        This method uses mysql-connector for database interaction.
         
         Args:
             query (str): The SQL query to execute

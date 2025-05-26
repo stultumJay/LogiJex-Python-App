@@ -1,7 +1,5 @@
 import random
 import string
-import smtplib
-from email.mime.text import MIMEText
 from datetime import datetime, timedelta
 from utils.config import AppConfig
 
@@ -26,7 +24,6 @@ class MFAService:
     def send_mfa_code(self, user_email, username):
         """
         Simulates sending an MFA code to the user's email.
-        In a real application, this would use smtplib or a dedicated email service.
         """
         code = self.generate_mfa_code()
         # Convert minutes to seconds for the expiry calculation
@@ -57,22 +54,6 @@ Inventory Management System Team
         print(f"BODY:\n{body}")
         print(f"--- END SIMULATED EMAIL ---\n")
 
-        # --- REAL EMAIL SENDING (requires proper SMTP setup and security) ---
-        # try:
-        #     msg = MIMEText(body)
-        #     msg['Subject'] = subject
-        #     msg['From'] = AppConfig.MFA_SENDER_EMAIL
-        #     msg['To'] = user_email
-
-        #     server = smtplib.SMTP_SSL('smtp.gmail.com', 465) # Use 587 for TLS
-        #     server.login(AppConfig.MFA_SENDER_EMAIL, AppConfig.MFA_SENDER_PASSWORD) # MFA_SENDER_PASSWORD from config/env
-        #     server.sendmail(AppConfig.MFA_SENDER_EMAIL, user_email, msg.as_string())
-        #     server.quit()
-        #     print(f"MFA code sent to {user_email}")
-        #     return True
-        # except Exception as e:
-        #     print(f"Failed to send MFA code: {e}")
-        #     return False
         return True # Assume success for simulation
 
     def verify_mfa_code(self, username, entered_code):
