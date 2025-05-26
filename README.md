@@ -177,4 +177,4 @@ A brief overview of the project's directory structure:
 *   `README.md`: This file, providing information about the project.
 
 ---
-<footer align="center"> Copyright &copy; 2025 Gerfel Jay Jimenez </footer>
+<p align="center"> Copyright &copy; 2025 Gerfel Jay Jimenez </p>
