@@ -53,18 +53,6 @@ if __name__ == "__main__":
         print("Applying application stylesheet...")
         app.setStyleSheet(get_global_stylesheet())
 
-        # Add custom fonts if available
-        print("Loading fonts...")
-        font_files = [
-            "assets/fonts/Inter-Regular.ttf",
-            "assets/fonts/Inter-Bold.ttf"
-        ]
-        for font_file in font_files:
-            if os.path.exists(font_file):
-                QFontDatabase.addApplicationFont(font_file)
-            else:
-                print(f"Font file not found: {font_file}")
-
         # Initialize database
         print("Initializing database...")
         try:
